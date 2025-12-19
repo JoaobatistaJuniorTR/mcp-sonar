@@ -23,6 +23,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
     "sonarqube": {
       "command": "uvx",
       "args": [
+        "--from",
         "git+https://github.com/JoaobatistaJuniorTR/mcp-sonar.git",
         "mcp-sonarqube"
       ],
@@ -35,7 +36,9 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 }
 ```
 
-**⚠️ IMPORTANTE**: Substitua `seu_token_aqui` pelo seu token do SonarQube.
+**⚠️ IMPORTANTE**: 
+- Substitua `seu_token_aqui` pelo seu token do SonarQube
+- O `--from` é obrigatório para especificar que o pacote vem de um repositório Git
 
 ### Método 2: Execução Direta do GitHub (Fallback)
 
@@ -192,6 +195,11 @@ O `uvx` é similar ao `npx` do Node.js - executa pacotes Python diretamente sem 
 - ✅ Sempre usa a versão mais recente
 - ✅ Isolamento de dependências
 
+**Formato do comando:**
+```bash
+uvx --from git+https://github.com/JoaobatistaJuniorTR/mcp-sonar.git mcp-sonarqube
+```
+
 ### Método 2: Clonar e Executar Localmente
 
 ```bash
@@ -224,6 +232,11 @@ Depois configure no Cursor:
 ### Erro: "uvx: command not found"
 Instale o `uv` primeiro (veja seção de instalação acima).
 
+### Erro: "Failed to build"
+- Verifique se o repositório está acessível
+- Tente limpar o cache: `uv cache clean`
+- Verifique se o `pyproject.toml` está correto
+
 ### Erro: "ModuleNotFoundError: No module named 'mcp'"
 Se estiver usando o método manual, instale as dependências:
 ```bash
@@ -249,7 +262,7 @@ mcp-sonar/
 ├── sonarqube_mcp_server.py    # Servidor MCP principal
 ├── __main__.py                 # Entry point para execução modular
 ├── pyproject.toml              # Configuração do projeto (para uvx)
-├── requirements.txt            # Dependências Python
+├── requirements.txt             # Dependências Python
 ├── README.md                   # Este arquivo
 └── .gitignore                  # Arquivos ignorados pelo Git
 ```
