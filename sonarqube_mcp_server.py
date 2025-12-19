@@ -316,5 +316,9 @@ async def main():
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
-if __name__ == "__main__":
+def entry_point():
+    """Entry point para execução via uvx"""
     asyncio.run(main())
+
+if __name__ == "__main__":
+    entry_point()
