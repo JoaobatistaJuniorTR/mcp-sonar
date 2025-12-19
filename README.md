@@ -4,9 +4,42 @@ Servidor Model Context Protocol (MCP) para integração com SonarQube, permitind
 
 ## 🚀 Quick Start
 
-### Configuração no Cursor
+### Método 1: Usando uvx (Recomendado) ⭐
 
-Adicione ao seu arquivo de configuração do MCP:
+**Pré-requisito**: Instale o `uv` primeiro:
+```bash
+# Windows (PowerShell)
+irm https://astral.sh/uv/install.ps1 | iex
+
+# Linux/Mac
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Configuração no Cursor:**
+
+```json
+{
+  "mcpServers": {
+    "sonarqube": {
+      "command": "uvx",
+      "args": [
+        "git+https://github.com/JoaobatistaJuniorTR/mcp-sonar.git",
+        "mcp-sonarqube"
+      ],
+      "env": {
+        "SONARQUBE_URL": "https://sonar.qa.thomsonreuters.com",
+        "SONARQUBE_TOKEN": "seu_token_aqui"
+      }
+    }
+  }
+}
+```
+
+**⚠️ IMPORTANTE**: Substitua `seu_token_aqui` pelo seu token do SonarQube.
+
+### Método 2: Execução Direta do GitHub (Fallback)
+
+Se `uvx` não estiver disponível, use:
 
 ```json
 {
@@ -26,18 +59,28 @@ Adicione ao seu arquivo de configuração do MCP:
 }
 ```
 
-**⚠️ IMPORTANTE**: Substitua `seu_token_aqui` pelo seu token do SonarQube.
-
 ## 📋 Pré-requisitos
 
 - Python 3.8 ou superior
 - Acesso a um servidor SonarQube
 - Token de autenticação do SonarQube
-- Dependências: `mcp` e `requests`
+- `uv` instalado (para método uvx) ou Python com `mcp` e `requests`
 
 ## 🔧 Instalação
 
-### Instalar dependências
+### Instalar uv (para usar uvx)
+
+**Windows:**
+```powershell
+irm https://astral.sh/uv/install.ps1 | iex
+```
+
+**Linux/Mac:**
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### Instalar dependências manualmente (se não usar uvx)
 
 ```bash
 pip install mcp requests
@@ -139,9 +182,15 @@ get_quality_gate_status com projectKey="com.thomsonreuters:rt-data-scanner"
 
 ## 🔄 Métodos de Execução
 
-### Método 1: Execução Direta do GitHub (Recomendado)
+### Método 1: uvx (Recomendado) ⭐
 
-O método acima usa execução inline que baixa o código diretamente do GitHub. Sem necessidade de clonar o repositório.
+O `uvx` é similar ao `npx` do Node.js - executa pacotes Python diretamente sem instalação prévia.
+
+**Vantagens:**
+- ✅ Sem necessidade de clonar o repositório
+- ✅ Sem necessidade de instalar dependências manualmente
+- ✅ Sempre usa a versão mais recente
+- ✅ Isolamento de dependências
 
 ### Método 2: Clonar e Executar Localmente
 
@@ -172,7 +221,11 @@ Depois configure no Cursor:
 
 ## 🆘 Troubleshooting
 
+### Erro: "uvx: command not found"
+Instale o `uv` primeiro (veja seção de instalação acima).
+
 ### Erro: "ModuleNotFoundError: No module named 'mcp'"
+Se estiver usando o método manual, instale as dependências:
 ```bash
 pip install mcp requests
 ```
@@ -194,6 +247,8 @@ pip install mcp requests
 ```
 mcp-sonar/
 ├── sonarqube_mcp_server.py    # Servidor MCP principal
+├── __main__.py                 # Entry point para execução modular
+├── pyproject.toml              # Configuração do projeto (para uvx)
 ├── requirements.txt            # Dependências Python
 ├── README.md                   # Este arquivo
 └── .gitignore                  # Arquivos ignorados pelo Git
@@ -211,3 +266,4 @@ Este projeto é para uso interno da organização.
 
 - [Repositório GitHub](https://github.com/JoaobatistaJuniorTR/mcp-sonar)
 - [Documentação SonarQube API](https://docs.sonarqube.org/latest/extend/web-api/)
+- [Documentação uv/uvx](https://github.com/astral-sh/uv)
