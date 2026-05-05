@@ -46,7 +46,7 @@ async def list_tools() -> list[Tool]:
     return [
         Tool(
             name="search_issues",
-            description="Busca issues do SonarQube em projetos. Pode filtrar por projeto, severidade, status, branch, componente e data de criação.",
+            description="Busca issues do SonarQube em projetos. Pode filtrar por projeto, severidade, status, branch, pull request, componente e data de criação.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -67,7 +67,11 @@ async def list_tools() -> list[Tool]:
                     },
                     "branch": {
                         "type": "string",
-                        "description": "Nome do branch para filtrar issues (ex: 'feature/minha-feature'). Se não informado, usa o branch principal."
+                        "description": "Nome do branch para filtrar issues (ex: 'feature/minha-feature'). Se não informado, usa o branch principal. Mutuamente exclusivo com pullRequest."
+                    },
+                    "pullRequest": {
+                        "type": "string",
+                        "description": "ID do pull request para filtrar issues da análise de PR (ex: '42'). Mutuamente exclusivo com branch. Use este parâmetro para encontrar issues detectadas na decoração do PR."
                     },
                     "componentKeys": {
                         "type": "array",
@@ -110,7 +114,11 @@ async def list_tools() -> list[Tool]:
                     },
                     "branch": {
                         "type": "string",
-                        "description": "Nome do branch para obter métricas (ex: 'feature/minha-feature'). Se não informado, usa o branch principal."
+                        "description": "Nome do branch para obter métricas (ex: 'feature/minha-feature'). Se não informado, usa o branch principal. Mutuamente exclusivo com pullRequest."
+                    },
+                    "pullRequest": {
+                        "type": "string",
+                        "description": "ID do pull request para obter métricas da análise de PR (ex: '42'). Mutuamente exclusivo com branch."
                     }
                 },
                 "required": ["projectKey"]
@@ -128,7 +136,11 @@ async def list_tools() -> list[Tool]:
                     },
                     "branch": {
                         "type": "string",
-                        "description": "Nome do branch para verificar o Quality Gate (ex: 'feature/minha-feature'). Se não informado, usa o branch principal."
+                        "description": "Nome do branch para verificar o Quality Gate (ex: 'feature/minha-feature'). Se não informado, usa o branch principal. Mutuamente exclusivo com pullRequest."
+                    },
+                    "pullRequest": {
+                        "type": "string",
+                        "description": "ID do pull request para verificar o Quality Gate da análise de PR (ex: '42'). Mutuamente exclusivo com branch."
                     }
                 },
                 "required": ["projectKey"]
@@ -160,7 +172,11 @@ async def list_tools() -> list[Tool]:
                     },
                     "branch": {
                         "type": "string",
-                        "description": "Nome do branch para obter o resumo (ex: 'feature/minha-feature'). Se não informado, usa o branch principal."
+                        "description": "Nome do branch para obter o resumo (ex: 'feature/minha-feature'). Se não informado, usa o branch principal. Mutuamente exclusivo com pullRequest."
+                    },
+                    "pullRequest": {
+                        "type": "string",
+                        "description": "ID do pull request para obter o resumo da análise de PR (ex: '42'). Mutuamente exclusivo com branch."
                     }
                 },
                 "required": ["projectKey"]
@@ -219,7 +235,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         if statuses := arguments.get("statuses"):
             params["statuses"] = ",".join(statuses)
 
-        if branch := arguments.get("branch"):
+        pull_request = arguments.get("pullRequest")
+        branch = arguments.get("branch")
+        if pull_request:
+            params["pullRequest"] = pull_request
+        elif branch:
             params["branch"] = branch
 
         if created_after := arguments.get("createdAfter"):
@@ -238,7 +258,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         output = f"Total de issues: {total}\n"
         output += f"Página {page_index} de {total_pages}\n"
         output += f"Issues nesta página: {len(issues)}\n"
-        if branch:
+        if pull_request:
+            output += f"Pull Request: {pull_request}\n"
+        elif branch:
             output += f"Branch: {branch}\n"
         if total_pages > page_index:
             output += f"Próxima página: page={page_index + 1}\n"
@@ -276,7 +298,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             "metricKeys": ",".join(metric_keys)
         }
 
-        if branch := arguments.get("branch"):
+        if pull_request := arguments.get("pullRequest"):
+            params["pullRequest"] = pull_request
+        elif branch := arguments.get("branch"):
             params["branch"] = branch
 
         result = make_sonarqube_request("measures/component", params)
@@ -298,7 +322,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         project_key = arguments.get("projectKey")
         params = {"projectKey": project_key}
 
-        if branch := arguments.get("branch"):
+        if pull_request := arguments.get("pullRequest"):
+            params["pullRequest"] = pull_request
+        elif branch := arguments.get("branch"):
             params["branch"] = branch
 
         result = make_sonarqube_request("qualitygates/project_status", params)
@@ -326,7 +352,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             "ps": 500
         }
 
-        if branch := arguments.get("branch"):
+        if pull_request := arguments.get("pullRequest"):
+            params["pullRequest"] = pull_request
+        elif branch := arguments.get("branch"):
             params["branch"] = branch
 
         result = make_sonarqube_request("issues/search", params)
