@@ -32,7 +32,7 @@ def make_sonarqube_request(endpoint: str, params: Optional[dict] = None) -> dict
     url = f"{SONARQUBE_URL.rstrip('/')}/api/{endpoint.lstrip('/')}"
     headers = {"Accept": "application/json"}
     auth = (SONARQUBE_TOKEN, "")
-    
+
     try:
         response = requests.get(url, params=params or {}, headers=headers, auth=auth, timeout=30)
         response.raise_for_status()
@@ -46,7 +46,7 @@ async def list_tools() -> list[Tool]:
     return [
         Tool(
             name="search_issues",
-            description="Busca issues do SonarQube em projetos. Pode filtrar por projeto, severidade e status.",
+            description="Busca issues do SonarQube em projetos. Pode filtrar por projeto, severidade, status, branch, componente e data de criação.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -64,6 +64,19 @@ async def list_tools() -> list[Tool]:
                         "type": "array",
                         "items": {"type": "string", "enum": ["OPEN", "CONFIRMED", "REOPENED", "RESOLVED", "CLOSED"]},
                         "description": "Filtrar por status"
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Nome do branch para filtrar issues (ex: 'feature/minha-feature'). Se não informado, usa o branch principal."
+                    },
+                    "componentKeys": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Lista de chaves de componentes/arquivos para filtrar (ex: ['com.thomsonreuters:rt-data-scanner:src/main/java/Foo.java']). Quando fornecido, tem prioridade sobre projectKeys."
+                    },
+                    "createdAfter": {
+                        "type": "string",
+                        "description": "Filtrar issues criadas após esta data (formato ISO 8601, ex: '2025-01-15' ou '2025-01-15T10:00:00+0000')"
                     },
                     "pageSize": {
                         "type": "integer",
@@ -94,6 +107,10 @@ async def list_tools() -> list[Tool]:
                         "items": {"type": "string"},
                         "description": "Lista de métricas a buscar (ex: ['coverage', 'ncloc', 'complexity', 'violations'])",
                         "default": ["coverage", "ncloc", "complexity", "violations", "code_smells", "bugs", "vulnerabilities"]
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Nome do branch para obter métricas (ex: 'feature/minha-feature'). Se não informado, usa o branch principal."
                     }
                 },
                 "required": ["projectKey"]
@@ -108,6 +125,10 @@ async def list_tools() -> list[Tool]:
                     "projectKey": {
                         "type": "string",
                         "description": "Chave do projeto"
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Nome do branch para verificar o Quality Gate (ex: 'feature/minha-feature'). Se não informado, usa o branch principal."
                     }
                 },
                 "required": ["projectKey"]
@@ -136,6 +157,10 @@ async def list_tools() -> list[Tool]:
                     "projectKey": {
                         "type": "string",
                         "description": "Chave do projeto"
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Nome do branch para obter o resumo (ex: 'feature/minha-feature'). Se não informado, usa o branch principal."
                     }
                 },
                 "required": ["projectKey"]
@@ -154,109 +179,135 @@ async def list_tools() -> list[Tool]:
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     """Executa uma ferramenta"""
-    
+
     if name == "ping_sonarqube":
         result = make_sonarqube_request("system/status")
         if "error" in result:
             return [TextContent(type="text", text=f"Erro ao conectar: {result['error']}")]
         return [TextContent(type="text", text=f"SonarQube está acessível. Status: {result.get('status', 'UNKNOWN')}")]
-    
+
     elif name == "list_projects":
         page = arguments.get("page", 1)
         result = make_sonarqube_request("projects/search", {"p": page})
         if "error" in result:
             return [TextContent(type="text", text=f"Erro: {result['error']}")]
-        
+
         projects = result.get("components", [])
         output = f"Total de projetos: {result.get('paging', {}).get('total', 0)}\n\n"
         for project in projects:
             output += f"- {project.get('key', 'N/A')}: {project.get('name', 'N/A')}\n"
-        
+
         return [TextContent(type="text", text=output)]
-    
+
     elif name == "search_issues":
+        page_size = arguments.get("pageSize", 100)
         params = {
-            "ps": arguments.get("pageSize", 100),
+            "ps": page_size,
             "p": arguments.get("page", 1)
         }
-        
-        if project_keys := arguments.get("projectKeys"):
+
+        component_keys = arguments.get("componentKeys")
+        project_keys = arguments.get("projectKeys")
+        if component_keys:
+            params["componentKeys"] = ",".join(component_keys)
+        elif project_keys:
             params["componentKeys"] = ",".join(project_keys)
-        
+
         if severities := arguments.get("severities"):
             params["severities"] = ",".join(severities)
-        
+
         if statuses := arguments.get("statuses"):
             params["statuses"] = ",".join(statuses)
-        
+
+        if branch := arguments.get("branch"):
+            params["branch"] = branch
+
+        if created_after := arguments.get("createdAfter"):
+            params["createdAfter"] = created_after
+
         result = make_sonarqube_request("issues/search", params)
         if "error" in result:
             return [TextContent(type="text", text=f"Erro: {result['error']}")]
-        
+
         issues = result.get("issues", [])
         total = result.get("total", 0)
         paging = result.get("paging", {})
-        
+        page_index = paging.get("pageIndex", 1)
+        total_pages = -(-total // page_size) if total > 0 else 1
+
         output = f"Total de issues: {total}\n"
-        output += f"Página {paging.get('pageIndex', 1)} de {paging.get('total', 1)}\n"
-        output += f"Issues nesta página: {len(issues)}\n\n"
-        
-        # Agrupar por severidade
+        output += f"Página {page_index} de {total_pages}\n"
+        output += f"Issues nesta página: {len(issues)}\n"
+        if branch:
+            output += f"Branch: {branch}\n"
+        if total_pages > page_index:
+            output += f"Próxima página: page={page_index + 1}\n"
+        output += "\n"
+
         by_severity = {}
         for issue in issues:
             severity = issue.get("severity", "UNKNOWN")
             if severity not in by_severity:
                 by_severity[severity] = []
             by_severity[severity].append(issue)
-        
+
         for severity in ["BLOCKER", "CRITICAL", "MAJOR", "MINOR", "INFO"]:
             if severity in by_severity:
                 output += f"\n{severity}: {len(by_severity[severity])} issues\n"
-                for issue in by_severity[severity][:5]:  # Mostrar apenas as 5 primeiras
+                for issue in by_severity[severity]:
                     text_range = issue.get("textRange", {})
                     location = f"Linha {text_range.get('startLine', '?')}" if text_range else "N/A"
-                    output += f"  - {issue.get('message', 'N/A')[:80]}...\n"
+                    output += f"  [{severity}] {issue.get('message', 'N/A')}\n"
                     output += f"    Componente: {issue.get('component', 'N/A')}\n"
                     output += f"    Localização: {location}\n"
                     output += f"    Status: {issue.get('status', 'N/A')}\n"
-                if len(by_severity[severity]) > 5:
-                    output += f"  ... e mais {len(by_severity[severity]) - 5} issues\n"
-        
+                    if issue.get("creationDate"):
+                        output += f"    Criado em: {issue['creationDate']}\n"
+                    output += "\n"
+
         return [TextContent(type="text", text=output)]
-    
+
     elif name == "get_project_measures":
         project_key = arguments.get("projectKey")
         metric_keys = arguments.get("metricKeys", ["coverage", "ncloc", "complexity", "violations", "code_smells", "bugs", "vulnerabilities"])
-        
+
         params = {
             "component": project_key,
             "metricKeys": ",".join(metric_keys)
         }
-        
+
+        if branch := arguments.get("branch"):
+            params["branch"] = branch
+
         result = make_sonarqube_request("measures/component", params)
         if "error" in result:
             return [TextContent(type="text", text=f"Erro: {result['error']}")]
-        
+
         component = result.get("component", {})
         measures = component.get("measures", [])
-        
+
         output = f"Métricas do projeto: {project_key}\n\n"
         for measure in measures:
             metric = measure.get("metric", "N/A")
             value = measure.get("value", "N/A")
             output += f"{metric}: {value}\n"
-        
+
         return [TextContent(type="text", text=output)]
-    
+
     elif name == "get_quality_gate_status":
         project_key = arguments.get("projectKey")
-        result = make_sonarqube_request("qualitygates/project_status", {"projectKey": project_key})
+        params = {"projectKey": project_key}
+
+        if branch := arguments.get("branch"):
+            params["branch"] = branch
+
+        result = make_sonarqube_request("qualitygates/project_status", params)
         if "error" in result:
             return [TextContent(type="text", text=f"Erro: {result['error']}")]
-        
+
         status = result.get("status", "UNKNOWN")
         conditions = result.get("conditions", [])
-        
+
         output = f"Quality Gate Status: {status}\n\n"
         output += "Condições:\n"
         for condition in conditions:
@@ -265,49 +316,54 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             actual = condition.get("actualValue", "N/A")
             threshold = condition.get("errorThreshold", "N/A")
             output += f"  {metric}: {cond_status} (Atual: {actual}, Limite: {threshold})\n"
-        
+
         return [TextContent(type="text", text=output)]
-    
+
     elif name == "get_project_issues_summary":
         project_key = arguments.get("projectKey")
-        result = make_sonarqube_request("issues/search", {
+        params = {
             "componentKeys": project_key,
             "ps": 500
-        })
-        
+        }
+
+        if branch := arguments.get("branch"):
+            params["branch"] = branch
+
+        result = make_sonarqube_request("issues/search", params)
+
         if "error" in result:
             return [TextContent(type="text", text=f"Erro: {result['error']}")]
-        
+
         issues = result.get("issues", [])
         total = result.get("total", 0)
-        
+
         by_severity = {}
         by_status = {}
-        
+
         for issue in issues:
             severity = issue.get("severity", "UNKNOWN")
             status = issue.get("status", "UNKNOWN")
-            
+
             by_severity[severity] = by_severity.get(severity, 0) + 1
             by_status[status] = by_status.get(status, 0) + 1
-        
+
         output = f"Resumo de Issues - {project_key}\n"
         output += f"Total: {total}\n\n"
-        
+
         output += "Por Severidade:\n"
         for severity in ["BLOCKER", "CRITICAL", "MAJOR", "MINOR", "INFO"]:
             count = by_severity.get(severity, 0)
             if count > 0:
                 output += f"  {severity}: {count}\n"
-        
+
         output += "\nPor Status:\n"
         for status in ["OPEN", "CONFIRMED", "REOPENED", "RESOLVED", "CLOSED"]:
             count = by_status.get(status, 0)
             if count > 0:
                 output += f"  {status}: {count}\n"
-        
+
         return [TextContent(type="text", text=output)]
-    
+
     else:
         return [TextContent(type="text", text=f"Ferramenta desconhecida: {name}")]
 
